@@ -1,0 +1,24 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: secureflow-mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGODB_HOST_PORT:-27018}:27017"
+    environment:
+      MONGO_INITDB_DATABASE: secureflow
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    container_name: secureflow-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mongo_data:
+  redis_data:

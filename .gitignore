@@ -1,0 +1,8 @@
+Frontend/node_modules
+Frontend/dist
+Backend/node_modules
+Backend/workspace
+Backend/.env
+Frontend/.env
+.env
+.DS_Store

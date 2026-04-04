@@ -1,0 +1,12 @@
+{
+  "name": "secureflow",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev:backend": "npm --prefix Backend run dev",
+    "dev:frontend": "npm --prefix Frontend run dev",
+    "build:frontend": "npm --prefix Frontend run build",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down"
+  }
+}
