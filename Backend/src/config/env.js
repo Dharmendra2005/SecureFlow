@@ -10,6 +10,9 @@ const toNumber = (value, fallback) => {
   return Number.isNaN(parsed) ? fallback : parsed;
 };
 
+const toStringWithDefault = (value, fallback) =>
+  value === undefined ? fallback : value;
+
 module.exports = {
   app: {
     name: process.env.APP_NAME || "SecureFlow API",
@@ -34,13 +37,13 @@ module.exports = {
     process.env.REPOSITORY_WORKSPACE ||
     path.resolve(__dirname, "../../workspace/repos"),
   tools: {
-    python: process.env.PYTHON_PATH || "python",
-    semgrepCommand: process.env.SEMGREP_COMMAND || "",
-    semgrepArgs: process.env.SEMGREP_ARGS || "-m semgrep",
-    pipAuditCommand: process.env.PIP_AUDIT_COMMAND || "",
-    pipAuditArgs: process.env.PIP_AUDIT_ARGS || "-m pip_audit",
-    gitleaksPath: process.env.GITLEAKS_PATH || "gitleaks",
-    trivyPath: process.env.TRIVY_PATH || "trivy",
-    dockerPath: process.env.DOCKER_PATH || "docker",
+    python: toStringWithDefault(process.env.PYTHON_PATH, "python"),
+    semgrepCommand: toStringWithDefault(process.env.SEMGREP_COMMAND, ""),
+    semgrepArgs: toStringWithDefault(process.env.SEMGREP_ARGS, "-m semgrep"),
+    pipAuditCommand: toStringWithDefault(process.env.PIP_AUDIT_COMMAND, ""),
+    pipAuditArgs: toStringWithDefault(process.env.PIP_AUDIT_ARGS, "-m pip_audit"),
+    gitleaksPath: toStringWithDefault(process.env.GITLEAKS_PATH, "gitleaks"),
+    trivyPath: toStringWithDefault(process.env.TRIVY_PATH, "trivy"),
+    dockerPath: toStringWithDefault(process.env.DOCKER_PATH, "docker"),
   },
 };

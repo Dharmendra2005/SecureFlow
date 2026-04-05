@@ -102,7 +102,7 @@ function App() {
           branch: form.branch,
           scanMode: form.scanMode,
           targetUrl: form.targetUrl,
-          tool: "semgrep",
+          tool: "scanner-engine",
           triggeredBy: "frontend-dashboard",
         }),
       });

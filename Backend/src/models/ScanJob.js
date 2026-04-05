@@ -72,4 +72,10 @@ const scanJobSchema = new mongoose.Schema(
   },
 );
 
+scanJobSchema.index({ repository: 1, createdAt: -1 });
+scanJobSchema.index({ status: 1, createdAt: -1 });
+scanJobSchema.index({ scanType: 1, createdAt: -1 });
+scanJobSchema.index({ queueJobId: 1 }, { unique: true, sparse: true });
+scanJobSchema.index({ triggeredBy: 1, createdAt: -1 });
+
 module.exports = mongoose.model("ScanJob", scanJobSchema);

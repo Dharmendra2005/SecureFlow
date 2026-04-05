@@ -4,6 +4,7 @@ const executeCommand = ({
   command,
   args = [],
   cwd,
+  env = {},
   timeoutMs = 300000,
 }) =>
   new Promise((resolve) => {
@@ -12,6 +13,12 @@ const executeCommand = ({
       args,
       {
         cwd,
+        env: {
+          ...process.env,
+          PYTHONUTF8: "1",
+          PYTHONIOENCODING: "utf-8",
+          ...env,
+        },
         timeout: timeoutMs,
         maxBuffer: 20 * 1024 * 1024,
         windowsHide: true,

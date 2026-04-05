@@ -45,7 +45,7 @@ const enqueueScan = async (req, res) => {
 
   const scanJob = await ScanJob.create({
     repository: repository._id,
-    tool: req.body.tool || "scanner-engine",
+    tool: "scanner-engine",
     scanType: scanMode,
     status: "pending",
     triggeredBy: req.body.triggeredBy || "api",

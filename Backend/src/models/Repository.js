@@ -61,4 +61,8 @@ const repositorySchema = new mongoose.Schema(
   },
 );
 
+repositorySchema.index({ url: 1, branch: 1 });
+repositorySchema.index({ owner: 1, name: 1 });
+repositorySchema.index({ submittedAt: -1 });
+
 module.exports = mongoose.model("Repository", repositorySchema);

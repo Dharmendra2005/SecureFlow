@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const healthRoutes = require("./routes/healthRoutes");
 const scanRoutes = require("./routes/scanRoutes");
+const reportRoutes = require("./routes/reportRoutes");
 
 const createApp = ({ config, redisClient, queue }) => {
   const app = express();
@@ -25,6 +26,7 @@ const createApp = ({ config, redisClient, queue }) => {
 
   app.use("/api", healthRoutes);
   app.use("/api", scanRoutes);
+  app.use("/api", reportRoutes);
 
   app.use((error, req, res, next) => {
     res.status(500).json({
