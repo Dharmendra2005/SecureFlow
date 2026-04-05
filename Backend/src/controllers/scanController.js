@@ -7,6 +7,8 @@ const enqueueScan = async (req, res) => {
   const repositoryUrl = req.body.repositoryUrl?.trim();
   const branch = req.body.branch?.trim() || "main";
   const scanMode = req.body.scanMode?.trim() || "Quick Scan";
+  const submittedBy = req.body.submittedBy?.trim() || "developer";
+  const targetUrl = req.body.targetUrl?.trim() || "";
 
   if (!repositoryUrl) {
     return res.status(400).json({
@@ -43,32 +45,50 @@ const enqueueScan = async (req, res) => {
 
   const scanJob = await ScanJob.create({
     repository: repository._id,
-    tool: req.body.tool || "semgrep",
-    status: "queued",
+    tool: req.body.tool || "scanner-engine",
+    scanType: scanMode,
+    status: "pending",
     triggeredBy: req.body.triggeredBy || "api",
+    queueJobId: "",
+    repositoryPath: repository.localPath,
+    userDetails: {
+      submittedBy,
+    },
     metadata: {
       initiatedFrom: "manual-dashboard",
       scanMode,
       branch,
       repositoryUrl,
+      repositoryPath: repository.localPath,
+      targetUrl,
     },
   });
 
-  await queue.add("security-scan", {
+  const queuedJob = await queue.add("scan-job", {
     scanJobId: scanJob._id.toString(),
     repositoryId: repository._id.toString(),
     tool: scanJob.tool,
     branch,
     scanMode,
     repositoryUrl,
+    repoPath: repository.localPath,
+    targetUrl,
+    userDetails: {
+      submittedBy,
+    },
   });
+
+  scanJob.queueJobId = queuedJob.id?.toString() || "";
+  await scanJob.save();
 
   return res.status(202).json({
     message: "Security scan queued successfully.",
     scanJob: {
       id: scanJob._id,
+      queueJobId: scanJob.queueJobId,
       status: scanJob.status,
       tool: scanJob.tool,
+      scanType: scanJob.scanType,
     },
     repository: {
       id: repository._id,

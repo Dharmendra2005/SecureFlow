@@ -33,4 +33,14 @@ module.exports = {
   repositoryWorkspace:
     process.env.REPOSITORY_WORKSPACE ||
     path.resolve(__dirname, "../../workspace/repos"),
+  tools: {
+    python: process.env.PYTHON_PATH || "python",
+    semgrepCommand: process.env.SEMGREP_COMMAND || "",
+    semgrepArgs: process.env.SEMGREP_ARGS || "-m semgrep",
+    pipAuditCommand: process.env.PIP_AUDIT_COMMAND || "",
+    pipAuditArgs: process.env.PIP_AUDIT_ARGS || "-m pip_audit",
+    gitleaksPath: process.env.GITLEAKS_PATH || "gitleaks",
+    trivyPath: process.env.TRIVY_PATH || "trivy",
+    dockerPath: process.env.DOCKER_PATH || "docker",
+  },
 };

@@ -1,4 +1,4 @@
-const { Queue } = require("bullmq");
+const { Queue, QueueEvents } = require("bullmq");
 
 const createScanQueue = ({ queueName, connection }) =>
   new Queue(queueName, {
@@ -14,6 +14,12 @@ const createScanQueue = ({ queueName, connection }) =>
     },
   });
 
+const createScanQueueEvents = ({ queueName, connection }) =>
+  new QueueEvents(queueName, {
+    connection,
+  });
+
 module.exports = {
   createScanQueue,
+  createScanQueueEvents,
 };

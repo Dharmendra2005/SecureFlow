@@ -15,10 +15,18 @@ const dashboardDefaults = {
       medium: 0,
       low: 0,
     },
+    jobStatusCounts: {
+      pending: 0,
+      active: 0,
+      completed: 0,
+      failed: 0,
+    },
   },
   latestSubmission: null,
   repositories: [],
   findings: [],
+  toolRuns: [],
+  scanJobs: [],
   recentReports: [],
 };
 
@@ -26,6 +34,7 @@ const defaultForm = {
   repositoryUrl: "",
   branch: "main",
   scanMode: "Quick Scan",
+  targetUrl: "",
 };
 
 const pipelineStages = [
@@ -92,6 +101,7 @@ function App() {
           repositoryUrl: form.repositoryUrl,
           branch: form.branch,
           scanMode: form.scanMode,
+          targetUrl: form.targetUrl,
           tool: "semgrep",
           triggeredBy: "frontend-dashboard",
         }),
@@ -122,15 +132,22 @@ function App() {
       return pipelineStages.map((stage) => ({ stage, status: "Complete" }));
     }
 
-    if (currentStatus === "running") {
+    if (currentStatus === "active") {
       return pipelineStages.map((stage, index) => ({
         stage,
         status: index === 0 ? "Running" : "Waiting",
       }));
     }
 
-    if (currentStatus === "queued") {
+    if (currentStatus === "pending") {
       return pipelineStages.map((stage) => ({ stage, status: "Waiting" }));
+    }
+
+    if (currentStatus === "failed") {
+      return pipelineStages.map((stage, index) => ({
+        stage,
+        status: index === 0 ? "Failed" : "Waiting",
+      }));
     }
 
     return pipelineStages.map((stage) => ({ stage, status: "Waiting" }));
@@ -251,6 +268,21 @@ function App() {
                   </label>
                 </div>
 
+                <label>
+                  <span>Target URL For DAST (Optional)</span>
+                  <input
+                    type="url"
+                    value={form.targetUrl}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        targetUrl: event.target.value,
+                      }))
+                    }
+                    placeholder="http://localhost:3000"
+                  />
+                </label>
+
                 <button className="action-button" disabled={submitting}>
                   {submitting ? "Starting..." : "Start Scan"}
                 </button>
@@ -261,6 +293,13 @@ function App() {
               <div className="panel-header">
                 <h3>Scan Status</h3>
                 <span className="soft-pill">Live Pipeline</span>
+              </div>
+
+              <div className="queue-summary">
+                <span>Pending {dashboard.metrics.jobStatusCounts.pending}</span>
+                <span>Active {dashboard.metrics.jobStatusCounts.active}</span>
+                <span>Completed {dashboard.metrics.jobStatusCounts.completed}</span>
+                <span>Failed {dashboard.metrics.jobStatusCounts.failed}</span>
               </div>
 
               <div className="status-list">
@@ -274,6 +313,12 @@ function App() {
                   </div>
                 ))}
               </div>
+
+              {dashboard.latestSubmission?.queueJobId ? (
+                <p className="job-meta">
+                  Queue Job ID: {dashboard.latestSubmission.queueJobId}
+                </p>
+              ) : null}
             </section>
 
             <section className="panel">
@@ -325,6 +370,12 @@ function App() {
               </span>
             </div>
 
+            {dashboard.latestSubmission?.repositoryPath ? (
+              <div className="report-context secondary">
+                <span>Workspace: {dashboard.latestSubmission.repositoryPath}</span>
+              </div>
+            ) : null}
+
             <div className="table-wrap">
               <table>
                 <thead>
@@ -362,6 +413,34 @@ function App() {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            <div className="tool-run-list">
+              {dashboard.toolRuns.map((run) => (
+                <div className="tool-run-row" key={`${run.tool}-${run.completedAt}`}>
+                  <div>
+                    <strong>{run.tool}</strong>
+                    <p>{run.message}</p>
+                  </div>
+                  <span className={`job-status ${run.status}`}>{run.status}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="job-list">
+              {dashboard.scanJobs.map((job) => (
+                <div className="job-list-row" key={job.id}>
+                  <div>
+                    <strong>{job.repository}</strong>
+                    <p>
+                      {job.scanType} / {job.tool}
+                    </p>
+                  </div>
+                  <span className={`job-status ${job.status}`}>
+                    {job.status}
+                  </span>
+                </div>
+              ))}
             </div>
           </section>
         </section>

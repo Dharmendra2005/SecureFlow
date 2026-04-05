@@ -292,7 +292,9 @@ select {
 }
 
 .status-list,
-.repository-list {
+.repository-list,
+.job-list,
+.tool-run-list {
   display: grid;
   gap: 10px;
 }
@@ -364,10 +366,38 @@ select {
   background: #f59e0b;
 }
 
+.status-dot.failed {
+  background: #ef4444;
+}
+
 .status-dot.waiting,
 .status-dot.idle,
-.status-dot.queued {
+.status-dot.queued,
+.status-dot.pending {
   background: #cbd5e1;
+}
+
+.queue-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.queue-summary span,
+.job-status {
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.82rem;
+  background: #f3f8fd;
+  border: 1px solid #cfe0ee;
+  color: #244566;
+}
+
+.job-meta {
+  margin: 12px 0 0;
+  color: #607b99;
+  overflow-wrap: anywhere;
 }
 
 .reports-panel {
@@ -383,6 +413,10 @@ select {
   background: #fbfdff;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.report-context.secondary {
+  margin-top: -2px;
 }
 
 .table-wrap {
@@ -443,6 +477,77 @@ th {
   border-color: #c7e9d1;
 }
 
+.job-list {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #dce7f1;
+}
+
+.tool-run-list {
+  margin-top: 14px;
+}
+
+.tool-run-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #dce7f1;
+}
+
+.tool-run-row p {
+  margin: 4px 0 0;
+  color: #607b99;
+}
+
+.job-list-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.job-list-row p {
+  margin: 4px 0 0;
+  color: #607b99;
+}
+
+.job-status.pending {
+  color: #6b7280;
+}
+
+.job-status.active {
+  color: #b45309;
+  background: #fff7e6;
+  border-color: #f0d39e;
+}
+
+.job-status.completed {
+  color: #166534;
+  background: #edf9f1;
+  border-color: #c7e9d1;
+}
+
+.job-status.failed {
+  color: #b42318;
+  background: #ffeaea;
+  border-color: #f5c3c3;
+}
+
+.job-status.skipped {
+  color: #475569;
+  background: #f8fafc;
+  border-color: #d9e2ec;
+}
+
+.job-status.error {
+  color: #9a3412;
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+
 .empty-state,
 .empty-table {
   color: #6d86a2;
@@ -472,7 +577,9 @@ th {
   .workspace-hero,
   .panel-header,
   .status-row,
-  .repository-item {
+  .repository-item,
+  .job-list-row,
+  .tool-run-row {
     flex-direction: column;
     align-items: flex-start;
   }

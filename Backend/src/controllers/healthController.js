@@ -37,7 +37,14 @@ const getHealth = async (req, res) => {
 };
 
 const getDashboardSnapshot = async (req, res) => {
-  const [repositoryCount, scanJobCount, vulnerabilityReports, recentRepositories, latestScanJob] = await Promise.all([
+  const [
+    repositoryCount,
+    scanJobCount,
+    vulnerabilityReports,
+    recentRepositories,
+    latestScanJob,
+    recentScanJobs,
+  ] = await Promise.all([
     Repository.countDocuments(),
     ScanJob.countDocuments(),
     VulnerabilityReport.find()
@@ -47,6 +54,11 @@ const getDashboardSnapshot = async (req, res) => {
       .lean(),
     Repository.find().sort({ updatedAt: -1 }).limit(5).lean(),
     ScanJob.findOne().sort({ createdAt: -1 }).populate("repository").lean(),
+    ScanJob.find()
+      .sort({ createdAt: -1 })
+      .populate("repository", "name url branch")
+      .limit(8)
+      .lean(),
   ]);
 
   const severityTotals = vulnerabilityReports.reduce(
@@ -76,6 +88,20 @@ const getDashboardSnapshot = async (req, res) => {
       severity: finding.severity || "medium",
       description: finding.description || "",
     })) || [];
+  const latestToolRuns = vulnerabilityReports[0]?.toolRuns || [];
+
+  const jobStatusCounts = recentScanJobs.reduce(
+    (accumulator, job) => {
+      accumulator[job.status] = (accumulator[job.status] || 0) + 1;
+      return accumulator;
+    },
+    {
+      pending: 0,
+      active: 0,
+      completed: 0,
+      failed: 0,
+    },
+  );
 
   res.json({
     metrics: {
@@ -83,15 +109,24 @@ const getDashboardSnapshot = async (req, res) => {
       scanJobs: scanJobCount,
       vulnerabilityReports: vulnerabilityReports.length,
       severityTotals,
+      jobStatusCounts,
     },
     latestSubmission: latestScanJob
       ? {
+          id: latestScanJob._id,
           repository: latestScanJob.repository?.name || "Unknown repository",
           repositoryUrl: latestScanJob.repository?.url || "",
           branch: latestScanJob.repository?.branch || "main",
           status: latestScanJob.status,
           scanMode: latestScanJob.metadata?.scanMode || "Quick Scan",
           tool: latestScanJob.tool,
+          queueJobId: latestScanJob.queueJobId,
+          repositoryPath: latestScanJob.repositoryPath || "",
+          targetUrl: latestScanJob.metadata?.targetUrl || "",
+          startedAt: latestScanJob.startedAt,
+          completedAt: latestScanJob.completedAt,
+          failedAt: latestScanJob.failedAt,
+          lastError: latestScanJob.lastError || "",
         }
       : null,
     repositories: recentRepositories.map((repository) => ({
@@ -106,6 +141,24 @@ const getDashboardSnapshot = async (req, res) => {
       submittedAt: repository.submittedAt,
     })),
     findings: latestFindings,
+    toolRuns: latestToolRuns,
+    scanJobs: recentScanJobs.map((job) => ({
+      id: job._id,
+      queueJobId: job.queueJobId,
+      repository: job.repository?.name || "Unknown repository",
+      repositoryUrl: job.repository?.url || "",
+      branch: job.repository?.branch || "main",
+      tool: job.tool,
+      scanType: job.scanType,
+      status: job.status,
+      repositoryPath: job.repositoryPath,
+      triggeredBy: job.triggeredBy,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+      failedAt: job.failedAt,
+      lastError: job.lastError,
+      createdAt: job.createdAt,
+    })),
     recentReports: vulnerabilityReports.map((report) => ({
       id: report._id,
       repository: report.repository?.name || "Unknown repository",

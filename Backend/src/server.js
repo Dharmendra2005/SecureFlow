@@ -1,9 +1,10 @@
 const config = require("./config/env");
 const { connectDatabase } = require("./config/db");
 const { createRedisConnection } = require("./config/redis");
-const { createScanQueue } = require("./queues/scanQueue");
+const { createScanQueue, createScanQueueEvents } = require("./queues/scanQueue");
 const { createScanWorker } = require("./workers/scanWorker");
 const { createApp } = require("./app");
+const { updateScanJobByQueueId } = require("./services/scanJobService");
 
 const startServer = async () => {
   await connectDatabase(config.mongodb.uri);
@@ -16,10 +17,40 @@ const startServer = async () => {
     connection: queueConnection,
   });
 
+  const queueEventsConnection = redisClient.duplicate();
+  const queueEvents = createScanQueueEvents({
+    queueName: config.queue.name,
+    connection: queueEventsConnection,
+  });
+  await queueEvents.waitUntilReady();
+
   const workerConnection = redisClient.duplicate();
   const worker = createScanWorker({
     queueName: config.queue.name,
     connection: workerConnection,
+  });
+
+  queueEvents.on("active", async ({ jobId }) => {
+    await updateScanJobByQueueId(jobId, {
+      status: "active",
+      startedAt: new Date(),
+      lastError: "",
+    });
+  });
+
+  queueEvents.on("completed", async ({ jobId }) => {
+    await updateScanJobByQueueId(jobId, {
+      status: "completed",
+      completedAt: new Date(),
+    });
+  });
+
+  queueEvents.on("failed", async ({ jobId, failedReason }) => {
+    await updateScanJobByQueueId(jobId, {
+      status: "failed",
+      failedAt: new Date(),
+      lastError: failedReason || "Scan job failed.",
+    });
   });
 
   worker.on("failed", (job, error) => {
