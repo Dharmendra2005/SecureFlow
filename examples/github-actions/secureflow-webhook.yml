@@ -1,0 +1,30 @@
+name: SecureFlow Webhook Trigger
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - "feature/**"
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  notify-secureflow:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send repository event to SecureFlow
+        env:
+          SECUREFLOW_WEBHOOK_URL: ${{ secrets.SECUREFLOW_WEBHOOK_URL }}
+          SECUREFLOW_WEBHOOK_SECRET: ${{ secrets.SECUREFLOW_WEBHOOK_SECRET }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: |
+          body="$(cat "$GITHUB_EVENT_PATH")"
+          signature="sha256=$(printf "%s" "$body" | openssl dgst -sha256 -hmac "$SECUREFLOW_WEBHOOK_SECRET" | sed 's/^.* //')"
+          curl -X POST "$SECUREFLOW_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: $GITHUB_EVENT_NAME" \
+            -H "X-Hub-Signature-256: $signature" \
+            -H "X-GitHub-Delivery: gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --data "$body"

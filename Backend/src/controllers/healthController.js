@@ -3,6 +3,7 @@ const ScanJob = require("../models/ScanJob");
 const VulnerabilityReport = require("../models/VulnerabilityReport");
 const { getDatabaseHealth } = require("../config/db");
 const { getRedisHealth } = require("../config/redis");
+const { buildRepositoryAnalytics } = require("../services/securityScoreService");
 
 const getHealth = async (req, res) => {
   const { redisClient, queue, config } = req.app.locals;
@@ -87,8 +88,21 @@ const getDashboardSnapshot = async (req, res) => {
       location: finding.location || "src/unknown.js",
       severity: finding.severity || "medium",
       description: finding.description || "",
+      ai: finding.ai || null,
     })) || [];
   const latestToolRuns = vulnerabilityReports[0]?.toolRuns || [];
+  const securityAnalytics = buildRepositoryAnalytics({
+    reports: vulnerabilityReports,
+  });
+  const latestSecurityScore = vulnerabilityReports[0]?.securityScore || null;
+  const securityScoreAverage = vulnerabilityReports.length
+    ? Math.round(
+        vulnerabilityReports.reduce(
+          (sum, report) => sum + Number(report.securityScore?.score || 0),
+          0,
+        ) / vulnerabilityReports.length,
+      )
+    : 0;
 
   const jobStatusCounts = recentScanJobs.reduce(
     (accumulator, job) => {
@@ -110,6 +124,7 @@ const getDashboardSnapshot = async (req, res) => {
       vulnerabilityReports: vulnerabilityReports.length,
       severityTotals,
       jobStatusCounts,
+      securityScoreAverage,
     },
     latestSubmission: latestScanJob
       ? {
@@ -129,6 +144,9 @@ const getDashboardSnapshot = async (req, res) => {
           lastError: latestScanJob.lastError || "",
         }
       : null,
+    latestReportId: vulnerabilityReports[0]?._id || null,
+    latestSecurityScore,
+    securityAnalytics,
     repositories: recentRepositories.map((repository) => ({
       id: repository._id,
       name: repository.name,
@@ -166,6 +184,7 @@ const getDashboardSnapshot = async (req, res) => {
       branch: report.repository?.branch || "main",
       provider: report.repository?.provider || "unknown",
       summary: report.summary,
+      securityScore: report.securityScore || null,
       createdAt: report.createdAt,
     })),
   });

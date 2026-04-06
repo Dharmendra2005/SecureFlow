@@ -5,9 +5,15 @@ const { createScanQueue, createScanQueueEvents } = require("./queues/scanQueue")
 const { createScanWorker } = require("./workers/scanWorker");
 const { createApp } = require("./app");
 const { updateScanJobByQueueId } = require("./services/scanJobService");
+const { ensureBootstrapAdmin } = require("./services/authService");
+const {
+  canSendGitHubFeedback,
+  createCommitStatus,
+} = require("./services/githubFeedbackService");
 
 const startServer = async () => {
   await connectDatabase(config.mongodb.uri);
+  await ensureBootstrapAdmin();
 
   const redisClient = createRedisConnection(config.redis);
   const queueConnection = redisClient.duplicate();
@@ -31,11 +37,31 @@ const startServer = async () => {
   });
 
   queueEvents.on("active", async ({ jobId }) => {
-    await updateScanJobByQueueId(jobId, {
+    const scanJob = await updateScanJobByQueueId(jobId, {
       status: "active",
       startedAt: new Date(),
       lastError: "",
     });
+
+    if (scanJob && canSendGitHubFeedback(scanJob.metadata)) {
+      const github = scanJob.metadata.github;
+
+      try {
+        await createCommitStatus({
+          owner: github.owner,
+          repo: github.repo,
+          sha: github.commitSha,
+          state: "pending",
+          description: "SecureFlow scan is in progress.",
+          targetUrl: config.app.clientUrl,
+        });
+      } catch (error) {
+        console.error("Failed to send GitHub pending status", {
+          queueJobId: jobId,
+          error: error.message,
+        });
+      }
+    }
   });
 
   queueEvents.on("completed", async ({ jobId }) => {
@@ -46,11 +72,31 @@ const startServer = async () => {
   });
 
   queueEvents.on("failed", async ({ jobId, failedReason }) => {
-    await updateScanJobByQueueId(jobId, {
+    const scanJob = await updateScanJobByQueueId(jobId, {
       status: "failed",
       failedAt: new Date(),
       lastError: failedReason || "Scan job failed.",
     });
+
+    if (scanJob && canSendGitHubFeedback(scanJob.metadata)) {
+      const github = scanJob.metadata.github;
+
+      try {
+        await createCommitStatus({
+          owner: github.owner,
+          repo: github.repo,
+          sha: github.commitSha,
+          state: "error",
+          description: "SecureFlow scan failed before completion.",
+          targetUrl: config.app.clientUrl,
+        });
+      } catch (error) {
+        console.error("Failed to send GitHub failure status", {
+          queueJobId: jobId,
+          error: error.message,
+        });
+      }
+    }
   });
 
   worker.on("failed", (job, error) => {

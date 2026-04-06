@@ -1,0 +1,37 @@
+name: SecureFlow CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install backend dependencies
+        working-directory: Backend
+        run: npm ci
+
+      - name: Run backend tests
+        working-directory: Backend
+        run: npm test
+
+      - name: Install frontend dependencies
+        working-directory: Frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: Frontend
+        run: npm run build
+
+      - name: Build docker images
+        run: docker compose build

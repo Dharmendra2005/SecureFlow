@@ -1,4 +1,64 @@
 services:
+  backend:
+    build:
+      context: ./Backend
+    container_name: secureflow-backend
+    restart: unless-stopped
+    env_file:
+      - ./Backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: 5050
+      MONGODB_URI: mongodb://mongodb:27017/secureflow
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CLIENT_URL: http://localhost
+      TRUST_PROXY: "true"
+      REPOSITORY_WORKSPACE: /app/workspace/repos
+      PYTHON_PATH: python3
+      SEMGREP_COMMAND: python3
+      SEMGREP_ARGS: -m semgrep
+      PIP_AUDIT_COMMAND: python3
+      PIP_AUDIT_ARGS: -m pip_audit
+      GITLEAKS_PATH: gitleaks
+      TRIVY_PATH: trivy
+      DOCKER_PATH: docker
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - backend_workspace:/app/workspace
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5050/api/health').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./Frontend
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: secureflow-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: secureflow-nginx
+    restart: unless-stopped
+    ports:
+      - "${APP_HOST_PORT:-80}:80"
+    depends_on:
+      frontend:
+        condition: service_started
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
   mongodb:
     image: mongo:7
     container_name: secureflow-mongodb
@@ -9,6 +69,11 @@ services:
       MONGO_INITDB_DATABASE: secureflow
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -18,7 +83,13 @@ services:
       - "${REDIS_HOST_PORT:-6380}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
 
 volumes:
+  backend_workspace:
   mongo_data:
   redis_data:

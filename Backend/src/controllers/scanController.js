@@ -1,9 +1,7 @@
-const Repository = require("../models/Repository");
-const ScanJob = require("../models/ScanJob");
-const { cloneRepository } = require("../services/repositoryCloneService");
+const { enqueueRepositoryScan } = require("../services/scanEnqueueService");
 
 const enqueueScan = async (req, res) => {
-  const { queue } = req.app.locals;
+  const { queue, config } = req.app.locals;
   const repositoryUrl = req.body.repositoryUrl?.trim();
   const branch = req.body.branch?.trim() || "main";
   const scanMode = req.body.scanMode?.trim() || "Quick Scan";
@@ -16,70 +14,18 @@ const enqueueScan = async (req, res) => {
     });
   }
 
-  let cloneResult;
-
   try {
-    cloneResult = await cloneRepository({
+    const { repository, scanJob } = await enqueueRepositoryScan({
+      queue,
+      config,
       repositoryUrl,
       branch,
-      baseDirectory: req.app.locals.config.repositoryWorkspace,
-    });
-  } catch (error) {
-    return res.status(400).json({
-      message: error.message,
-    });
-  }
-
-  const repository = await Repository.create({
-    name: cloneResult.name,
-    owner: cloneResult.owner,
-    url: repositoryUrl,
-    branch,
-    provider: "github",
-    scanMode,
-    localPath: cloneResult.clonePath,
-    cloneStatus: "cloned",
-    submittedAt: new Date(),
-    clonedAt: new Date(),
-  });
-
-  const scanJob = await ScanJob.create({
-    repository: repository._id,
-    tool: "scanner-engine",
-    scanType: scanMode,
-    status: "pending",
-    triggeredBy: req.body.triggeredBy || "api",
-    queueJobId: "",
-    repositoryPath: repository.localPath,
-    userDetails: {
-      submittedBy,
-    },
-    metadata: {
-      initiatedFrom: "manual-dashboard",
       scanMode,
-      branch,
-      repositoryUrl,
-      repositoryPath: repository.localPath,
-      targetUrl,
-    },
-  });
-
-  const queuedJob = await queue.add("scan-job", {
-    scanJobId: scanJob._id.toString(),
-    repositoryId: repository._id.toString(),
-    tool: scanJob.tool,
-    branch,
-    scanMode,
-    repositoryUrl,
-    repoPath: repository.localPath,
-    targetUrl,
-    userDetails: {
       submittedBy,
-    },
-  });
-
-  scanJob.queueJobId = queuedJob.id?.toString() || "";
-  await scanJob.save();
+      triggeredBy: req.body.triggeredBy || "api",
+      targetUrl,
+      tool: "scanner-engine",
+    });
 
   return res.status(202).json({
     message: "Security scan queued successfully.",
@@ -98,6 +44,11 @@ const enqueueScan = async (req, res) => {
       localPath: repository.localPath,
     },
   });
+  } catch (error) {
+    return res.status(400).json({
+      message: error.message,
+    });
+  }
 };
 
 module.exports = {

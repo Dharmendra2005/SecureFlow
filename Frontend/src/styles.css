@@ -53,6 +53,10 @@ select:focus {
   min-height: 100vh;
 }
 
+.app-shell.auth-shell {
+  grid-template-columns: 1fr;
+}
+
 .sidebar {
   background: #0f1f35;
   color: #f5fbff;
@@ -138,6 +142,15 @@ select:focus {
   min-width: 0;
 }
 
+.auth-workspace {
+  display: grid;
+  place-items: center;
+}
+
+.auth-panel {
+  width: min(520px, 100%);
+}
+
 .workspace-hero,
 .summary-card,
 .panel {
@@ -185,12 +198,25 @@ select:focus {
 .status-pill,
 .soft-pill,
 .job-status,
-.branch-badge {
+.branch-badge,
+.icon-button {
   border: 1px solid #c7d7e7;
   background: #f8fbfe;
   color: #244566;
   border-radius: 999px;
   padding: 8px 14px;
+}
+
+.icon-button {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.icon-button.danger-button {
+  color: #b42318;
+  border-color: #f5c3c3;
+  background: #fff1f1;
 }
 
 .hero-badge.pending,
@@ -284,6 +310,13 @@ select:focus {
 
 .summary-card.low {
   border-left-color: #22c55e;
+}
+
+.summary-card.score-card {
+  border-left-color: #2563eb;
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 34%),
+    #ffffff;
 }
 
 .summary-card span {
@@ -391,6 +424,10 @@ select:focus {
   cursor: pointer;
 }
 
+.secondary-button {
+  background: linear-gradient(180deg, #1f5f8f, #184d73);
+}
+
 .action-button:disabled {
   opacity: 0.7;
   cursor: wait;
@@ -404,6 +441,49 @@ select:focus {
 .history-list {
   display: grid;
   gap: 10px;
+}
+
+.score-hero {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.score-ring {
+  width: 110px;
+  height: 110px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  background:
+    radial-gradient(circle at center, #ffffff 42%, transparent 43%),
+    conic-gradient(#2563eb, #22c55e, #facc15, #2563eb);
+  color: #0f3154;
+  flex-shrink: 0;
+}
+
+.score-ring strong {
+  display: block;
+  font-size: 1.8rem;
+}
+
+.score-ring span {
+  font-size: 0.8rem;
+  color: #43617f;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.score-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.score-copy p {
+  margin: 0;
+  color: #607b99;
 }
 
 .chart-row {
@@ -481,6 +561,10 @@ select:focus {
   display: block;
   margin-bottom: 6px;
   color: #0f3154;
+}
+
+a {
+  color: #1d5fa0;
 }
 
 .repository-path {
@@ -646,6 +730,63 @@ tbody tr {
   border: 1px solid #d7e4f1;
 }
 
+.insight-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detail-meta {
+  color: #607b99;
+  font-size: 0.9rem;
+}
+
+.insight-section {
+  border: 1px solid #d7e4f1;
+  border-radius: 14px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.insight-section summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+  font-weight: 700;
+  color: #0f3154;
+  background: linear-gradient(180deg, #ffffff, #f7fbff);
+}
+
+.insight-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.insight-section p,
+.insight-list {
+  margin: 0;
+  padding: 0 14px 14px;
+}
+
+.insight-list {
+  padding-left: 32px;
+  color: #4b647f;
+}
+
+.insight-list.ordered {
+  padding-left: 36px;
+}
+
+.insight-note {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fdba74;
+  font-size: 0.92rem;
+}
+
 .filter-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr));
@@ -705,7 +846,8 @@ tbody tr {
   .repository-item,
   .job-list-row,
   .history-card,
-  .hero-actions {
+  .hero-actions,
+  .score-hero {
     flex-direction: column;
     align-items: flex-start;
   }

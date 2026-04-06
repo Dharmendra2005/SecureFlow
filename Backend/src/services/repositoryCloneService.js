@@ -1,6 +1,7 @@
 const fs = require("fs/promises");
 const path = require("path");
 const { simpleGit } = require("simple-git");
+const config = require("../config/env");
 
 const git = simpleGit();
 
@@ -33,6 +34,17 @@ const createClonePath = ({ baseDirectory, owner, repositoryName, branch }) => {
   );
 };
 
+const createAuthenticatedRepositoryUrl = (repositoryUrl) => {
+  if (!config.github.token) {
+    return repositoryUrl;
+  }
+
+  return repositoryUrl.replace(
+    /^https:\/\//i,
+    `https://x-access-token:${encodeURIComponent(config.github.token)}@`,
+  );
+};
+
 const cloneRepository = async ({
   repositoryUrl,
   branch,
@@ -49,15 +61,17 @@ const cloneRepository = async ({
   await fs.mkdir(path.dirname(clonePath), { recursive: true });
 
   try {
-    await git.clone(repositoryUrl, clonePath, [
+    await git.clone(createAuthenticatedRepositoryUrl(repositoryUrl), clonePath, [
       "--branch",
       branch,
       "--single-branch",
     ]);
+
+    await simpleGit(clonePath).remote(["set-url", "origin", repositoryUrl]);
   } catch (error) {
     if (/repository .* not found/i.test(error.message)) {
       throw new Error(
-        "GitHub repository not found or access denied. Private repositories are not supported yet.",
+        "GitHub repository not found or access denied.",
       );
     }
 
@@ -67,7 +81,7 @@ const cloneRepository = async ({
 
     if (/authentication failed/i.test(error.message)) {
       throw new Error(
-        "Authentication failed while cloning the repository. Private repositories are not supported yet.",
+        "Authentication failed while cloning the repository.",
       );
     }
 
