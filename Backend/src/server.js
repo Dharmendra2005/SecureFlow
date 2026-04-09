@@ -1,7 +1,10 @@
 const config = require("./config/env");
 const { connectDatabase } = require("./config/db");
 const { createRedisConnection } = require("./config/redis");
-const { createScanQueue, createScanQueueEvents } = require("./queues/scanQueue");
+const {
+  createScanQueue,
+  createScanQueueEvents,
+} = require("./queues/scanQueue");
 const { createScanWorker } = require("./workers/scanWorker");
 const { createApp } = require("./app");
 const { updateScanJobByQueueId } = require("./services/scanJobService");
@@ -11,11 +14,38 @@ const {
   createCommitStatus,
 } = require("./services/githubFeedbackService");
 
+const waitWithTimeout = async (promise, timeoutMs, timeoutMessage) => {
+  let timeoutId;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 const startServer = async () => {
+  console.log("Starting SecureFlow backend...");
+  console.log(`Connecting to MongoDB: ${config.mongodb.uri}`);
   await connectDatabase(config.mongodb.uri);
+  console.log("MongoDB connected.");
+
   await ensureBootstrapAdmin();
 
+  console.log(
+    `Connecting to Redis: ${config.redis.host}:${config.redis.port} (db ${config.redis.db})`,
+  );
   const redisClient = createRedisConnection(config.redis);
+  redisClient.on("error", (error) => {
+    console.error("Redis client error", error.message);
+  });
+
   const queueConnection = redisClient.duplicate();
 
   const queue = createScanQueue({
@@ -28,12 +58,21 @@ const startServer = async () => {
     queueName: config.queue.name,
     connection: queueEventsConnection,
   });
-  await queueEvents.waitUntilReady();
+  console.log("Waiting for scan queue events to be ready...");
+  await waitWithTimeout(
+    queueEvents.waitUntilReady(),
+    15000,
+    "Timed out waiting for Redis queue readiness. Check REDIS_HOST, REDIS_PORT, and REDIS_PASSWORD.",
+  );
+  console.log("Scan queue events ready.");
 
   const workerConnection = redisClient.duplicate();
   const worker = createScanWorker({
     queueName: config.queue.name,
     connection: workerConnection,
+  });
+  worker.on("error", (error) => {
+    console.error("Scan worker connection error", error.message);
   });
 
   queueEvents.on("active", async ({ jobId }) => {
@@ -112,6 +151,7 @@ const startServer = async () => {
     queue,
   });
 
+  console.log(`Starting HTTP server on port ${config.app.port}...`);
   app.listen(config.app.port, () => {
     console.log(
       `${config.app.name} listening on http://localhost:${config.app.port}`,

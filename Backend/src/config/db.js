@@ -5,9 +5,13 @@ let databaseConnectionState = {
   lastError: null,
 };
 
-const connectDatabase = async (uri) => {
+const connectDatabase = async (uri, options = {}) => {
   try {
-    await mongoose.connect(uri);
+    await mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
+      ...options,
+    });
     databaseConnectionState = {
       status: "connected",
       lastError: null,

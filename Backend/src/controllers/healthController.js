@@ -50,7 +50,7 @@ const getDashboardSnapshot = async (req, res) => {
     ScanJob.countDocuments(),
     VulnerabilityReport.find()
       .sort({ createdAt: -1 })
-      .populate("repository", "name branch provider")
+      .populate("repository", "name url branch provider")
       .limit(5)
       .lean(),
     Repository.find().sort({ updatedAt: -1 }).limit(5).lean(),

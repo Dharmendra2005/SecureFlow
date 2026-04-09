@@ -12,6 +12,11 @@ const severityRank = {
   info: 0,
 };
 
+const TOOL_MESSAGE_MAX_LENGTH = 320;
+const ANSI_ESCAPE_PATTERN =
+  // Remove terminal color/control sequences before showing tool output in the UI.
+  /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+
 const normalizeSeverity = (severity) => {
   const normalized = String(severity || "medium").toLowerCase();
 
@@ -53,6 +58,52 @@ const summarizeFindings = (findings) =>
 
 const createFindingId = (prefix, source) =>
   `${prefix}-${crypto.createHash("md5").update(source).digest("hex").slice(0, 8)}`;
+
+const summarizeCommandOutput = (value, fallback) => {
+  const normalized = String(value || "")
+    .replace(ANSI_ESCAPE_PATTERN, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (normalized.length <= TOOL_MESSAGE_MAX_LENGTH) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, TOOL_MESSAGE_MAX_LENGTH - 3)}...`;
+};
+
+const summarizeTrivyError = (result) => {
+  if (result.error?.killed) {
+    return "Trivy did not finish before the scan timeout. Run a Full Scan later after Trivy has initialized its vulnerability database.";
+  }
+
+  const combinedOutput = `${result.stderr || ""} ${result.stdout || ""}`;
+
+  if (/Need to update DB|Downloading vulnerability DB|mirror\.gcr\.io/i.test(combinedOutput)) {
+    return "Trivy could not finish downloading or updating its vulnerability database during this scan.";
+  }
+
+  return summarizeCommandOutput(
+    result.stderr || result.error?.message,
+    "Trivy execution failed.",
+  );
+};
+
+const parseJsonArrayOutput = (...values) => {
+  for (const value of values) {
+    const parsed = parseJson(value);
+
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+  }
+
+  return [];
+};
 
 const makeToolRun = ({
   tool,
@@ -161,7 +212,10 @@ const runSemgrepScan = async ({ repoPath }) => {
         tool: "Semgrep",
         status: "error",
         command,
-        message: result.stderr || result.error?.message || "Semgrep execution failed.",
+        message: summarizeCommandOutput(
+          result.stderr || result.error?.message,
+          "Semgrep execution failed.",
+        ),
       }),
     };
   }
@@ -211,19 +265,7 @@ const runGitleaksScan = async ({ repoPath }) => {
     };
   }
 
-  if (!result.ok) {
-    return {
-      findings: [],
-      toolRun: makeToolRun({
-        tool: "Gitleaks",
-        status: "error",
-        command,
-        message: result.stderr || result.error?.message || "Gitleaks execution failed.",
-      }),
-    };
-  }
-
-  const payload = parseJson(result.stdout) || [];
+  const payload = parseJsonArrayOutput(result.stdout, result.stderr);
   const findings = payload.map((item) => ({
     id: createFindingId("GL", `${item.RuleID}-${item.File}-${item.StartLine}`),
     tool: "Gitleaks",
@@ -234,6 +276,21 @@ const runGitleaksScan = async ({ repoPath }) => {
     description: item.Description || "Potential secret detected.",
     raw: item,
   }));
+
+  if (!result.ok && !findings.length) {
+    return {
+      findings: [],
+      toolRun: makeToolRun({
+        tool: "Gitleaks",
+        status: "error",
+        command,
+        message: summarizeCommandOutput(
+          result.stderr || result.error?.message,
+          "Gitleaks execution failed.",
+        ),
+      }),
+    };
+  }
 
   return {
     findings,
@@ -305,16 +362,19 @@ const runDependencyScan = async ({ repoPath }) => {
 
     return {
       findings: vulnerabilities,
-      toolRun: makeToolRun({
-        tool: "npm audit",
-        status: result.ok ? "completed" : "error",
-        command,
-        message: result.ok
-          ? `Completed dependency scan with ${vulnerabilities.length} findings.`
-          : result.stderr || result.error?.message || "npm audit returned errors.",
-        findings: vulnerabilities,
-      }),
-    };
+        toolRun: makeToolRun({
+          tool: "npm audit",
+          status: result.ok ? "completed" : "error",
+          command,
+          message: result.ok
+            ? `Completed dependency scan with ${vulnerabilities.length} findings.`
+            : summarizeCommandOutput(
+                result.stderr || result.error?.message,
+                "npm audit returned errors.",
+              ),
+          findings: vulnerabilities,
+        }),
+      };
   }
 
   const pipAuditCommand = buildPythonModuleCommand({
@@ -368,7 +428,10 @@ const runDependencyScan = async ({ repoPath }) => {
       command,
       message: result.ok
         ? `Completed dependency scan with ${findings.length} findings.`
-        : result.stderr || result.error?.message || "pip-audit returned errors.",
+        : summarizeCommandOutput(
+            result.stderr || result.error?.message,
+            "pip-audit returned errors.",
+          ),
       findings,
     }),
   };
@@ -402,7 +465,7 @@ const runTrivyScan = async ({ repoPath }) => {
         tool: "Trivy",
         status: "error",
         command,
-        message: result.stderr || result.error?.message || "Trivy execution failed.",
+        message: summarizeTrivyError(result),
       }),
     };
   }
@@ -487,7 +550,10 @@ const runZapScan = async ({ targetUrl }) => {
         tool: "OWASP ZAP",
         status: "error",
         command,
-        message: result.stderr || result.error?.message || "OWASP ZAP execution failed.",
+        message: summarizeCommandOutput(
+          result.stderr || result.error?.message,
+          "OWASP ZAP execution failed.",
+        ),
       }),
     };
   }
@@ -524,18 +590,17 @@ const sortFindings = (findings) =>
   );
 
 const buildScannerPlan = (scanType) => {
-  const basePlan = [
+  const quickScanPlan = [
     runSemgrepScan,
     runGitleaksScan,
     runDependencyScan,
-    runTrivyScan,
   ];
 
   if (scanType === "Full Scan") {
-    return [...basePlan, runZapScan];
+    return [...quickScanPlan, runTrivyScan, runZapScan];
   }
 
-  return basePlan;
+  return quickScanPlan;
 };
 
 const runRepositoryScans = async ({
