@@ -66,17 +66,37 @@ const defaultLoginForm = {
 };
 
 const severityCards = [
-  { key: "critical", label: "Critical", accent: "critical" },
-  { key: "high", label: "High", accent: "high" },
-  { key: "medium", label: "Medium", accent: "medium" },
-  { key: "low", label: "Low", accent: "low" },
+  {
+    key: "critical",
+    label: "Critical",
+    accent: "critical",
+    description: "Critical-severity issues found in recent scan reports",
+  },
+  {
+    key: "high",
+    label: "High",
+    accent: "high",
+    description: "High-severity issues found in recent scan reports",
+  },
+  {
+    key: "medium",
+    label: "Medium",
+    accent: "medium",
+    description: "Medium-severity issues found in recent scan reports",
+  },
+  {
+    key: "low",
+    label: "Low",
+    accent: "low",
+    description: "Low-severity issues found in recent scan reports",
+  },
 ];
 
 const navigationItems = [
   { id: "overview", label: "Dashboard" },
-  { id: "jobs", label: "Pipelines" },
   { id: "repositories", label: "Repositories" },
   { id: "reports", label: "Reports" },
+  { id: "team", label: "Team" },
 ];
 
 const pipelineStages = [
@@ -151,6 +171,17 @@ const parseApiResponse = async (response) => {
   };
 };
 
+const repositoryDefaults = {
+  data: [],
+  pagination: {
+    page: 1,
+    limit: 6,
+    totalItems: 0,
+    totalPages: 0,
+  },
+  filters: {},
+};
+
 function App() {
   const [auth, setAuth] = useState(() => {
     try {
@@ -164,9 +195,13 @@ function App() {
   const [dashboard, setDashboard] = useState(dashboardDefaults);
   const [reportsState, setReportsState] = useState(paginatedDefaults);
   const [jobsState, setJobsState] = useState(paginatedDefaults);
+  const [repositoriesState, setRepositoriesState] = useState(repositoryDefaults);
+  const [teamState, setTeamState] = useState(paginatedDefaults);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [loadingReports, setLoadingReports] = useState(false);
   const [loadingJobs, setLoadingJobs] = useState(false);
+  const [loadingRepositories, setLoadingRepositories] = useState(false);
+  const [loadingTeam, setLoadingTeam] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -180,19 +215,37 @@ function App() {
   });
   const [jobFilters, setJobFilters] = useState({
     page: 1,
-    limit: 5,
+    limit: 6,
     status: "",
     scanType: "",
     repository: "",
   });
+  const [repositoryFilters, setRepositoryFilters] = useState({
+    page: 1,
+    limit: 6,
+    search: "",
+    cloneStatus: "",
+  });
+  const [teamFilters, setTeamFilters] = useState({
+    page: 1,
+    limit: 8,
+    search: "",
+    role: "",
+    status: "",
+  });
   const [selectedFinding, setSelectedFinding] = useState(null);
+  const [selectedJobId, setSelectedJobId] = useState("");
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState("");
   const [findingSort, setFindingSort] = useState("severity");
   const [creatingRemediation, setCreatingRemediation] = useState(false);
   const [remediationMessage, setRemediationMessage] = useState("");
   const [deletingReportId, setDeletingReportId] = useState("");
+  const [savingUserId, setSavingUserId] = useState("");
+  const [teamDrafts, setTeamDrafts] = useState({});
   const liveScanInProgress = ["pending", "active"].includes(
     String(dashboard.latestSubmission?.status || "").toLowerCase(),
   );
+  const isAdmin = auth?.user?.role === "admin";
 
   const buildQueryString = (filters) => {
     const params = new URLSearchParams();
@@ -289,8 +342,68 @@ function App() {
     }
   };
 
+  const loadRepositories = async (filters = repositoryFilters) => {
+    try {
+      setLoadingRepositories(true);
+      const query = buildQueryString(filters);
+      const response = await fetchWithAuth(`${apiBaseUrl}/repositories?${query}`);
+
+      if (!response.ok) {
+        throw new Error("Unable to load repository inventory.");
+      }
+
+      setRepositoriesState(await response.json());
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoadingRepositories(false);
+    }
+  };
+
+  const loadTeam = async (filters = teamFilters) => {
+    if (!isAdmin) {
+      setTeamState(paginatedDefaults);
+      return;
+    }
+
+    try {
+      setLoadingTeam(true);
+      const query = buildQueryString(filters);
+      const response = await fetchWithAuth(`${apiBaseUrl}/users?${query}`);
+      const payload = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(payload.message || "Unable to load team members.");
+      }
+
+      setTeamState(payload);
+      setTeamDrafts((current) => {
+        const next = { ...current };
+
+        payload.data.forEach((member) => {
+          next[member.id] = next[member.id] || {
+            role: member.role,
+            status: member.status,
+          };
+        });
+
+        return next;
+      });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoadingTeam(false);
+    }
+  };
+
   const refreshAll = async () => {
-    await Promise.all([loadDashboard(), loadReports(reportFilters), loadJobs(jobFilters)]);
+    await Promise.all([
+      loadDashboard(),
+      loadReports(reportFilters),
+      loadJobs(jobFilters),
+      loadRepositories(repositoryFilters),
+      ...(isAdmin ? [loadTeam(teamFilters)] : []),
+    ]);
   };
 
   const createRemediationPullRequest = async () => {
@@ -504,6 +617,52 @@ function App() {
     }
   };
 
+  const updateTeamMember = async (memberId) => {
+    const draft = teamDrafts[memberId];
+
+    if (!draft) {
+      return;
+    }
+
+    try {
+      setSavingUserId(memberId);
+      setError("");
+      setSuccess("");
+
+      const response = await fetchWithAuth(`${apiBaseUrl}/users/${memberId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(draft),
+      });
+      const payload = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(payload.message || "Unable to update team member.");
+      }
+
+      setTeamState((current) => ({
+        ...current,
+        data: current.data.map((member) =>
+          member.id === memberId ? payload.data : member,
+        ),
+      }));
+      setSuccess(`Updated ${payload.data.name}.`);
+
+      if (auth?.user?.id === memberId) {
+        saveAuth({
+          ...auth,
+          user: payload.data,
+        });
+      }
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSavingUserId("");
+    }
+  };
+
   const stageStatuses = useMemo(() => {
     const currentStatus = dashboard.latestSubmission?.status || "idle";
 
@@ -591,6 +750,18 @@ function App() {
     );
   }, [dashboard.findings, findingSort]);
 
+  const selectedJob = useMemo(
+    () => jobsState.data.find((job) => job.id === selectedJobId) || null,
+    [jobsState.data, selectedJobId],
+  );
+
+  const selectedRepository = useMemo(
+    () =>
+      repositoriesState.data.find((repository) => repository.id === selectedRepositoryId) ||
+      null,
+    [repositoriesState.data, selectedRepositoryId],
+  );
+
   useEffect(() => {
     if (auth?.token) {
       refreshAll();
@@ -610,6 +781,18 @@ function App() {
   }, [auth?.token, jobFilters.page, jobFilters.limit, jobFilters.status, jobFilters.scanType, jobFilters.repository]);
 
   useEffect(() => {
+    if (auth?.token) {
+      loadRepositories(repositoryFilters);
+    }
+  }, [auth?.token, repositoryFilters.page, repositoryFilters.limit, repositoryFilters.search, repositoryFilters.cloneStatus]);
+
+  useEffect(() => {
+    if (auth?.token && isAdmin) {
+      loadTeam(teamFilters);
+    }
+  }, [auth?.token, isAdmin, teamFilters.page, teamFilters.limit, teamFilters.search, teamFilters.role, teamFilters.status]);
+
+  useEffect(() => {
     if (!liveScanInProgress) {
       return undefined;
     }
@@ -621,8 +804,12 @@ function App() {
         loadReports(reportFilters);
       }
 
-      if (activeView === "jobs") {
+      if (activeView === "pipelines") {
         loadJobs(jobFilters);
+      }
+
+      if (activeView === "repositories") {
+        loadRepositories(repositoryFilters);
       }
     }, 10000);
 
@@ -646,6 +833,30 @@ function App() {
       );
     });
   }, [dashboard.findings]);
+
+  useEffect(() => {
+    if (!jobsState.data.length) {
+      setSelectedJobId("");
+      return;
+    }
+
+    setSelectedJobId((current) =>
+      jobsState.data.some((job) => job.id === current) ? current : jobsState.data[0].id,
+    );
+  }, [jobsState.data]);
+
+  useEffect(() => {
+    if (!repositoriesState.data.length) {
+      setSelectedRepositoryId("");
+      return;
+    }
+
+    setSelectedRepositoryId((current) =>
+      repositoriesState.data.some((repository) => repository.id === current)
+        ? current
+        : repositoriesState.data[0].id,
+    );
+  }, [repositoriesState.data]);
 
   if (!auth?.token) {
     return (
@@ -740,6 +951,7 @@ function App() {
         <nav className="nav-list">
           {navigationItems.map((item) => (
             <button
+              type="button"
               className={`nav-item ${activeView === item.id ? "active" : ""}`}
               key={item.id}
               onClick={() => setActiveView(item.id)}
@@ -761,10 +973,21 @@ function App() {
       <main className="workspace">
         <section className="workspace-hero">
           <div>
-            <h2>Security Operations Dashboard</h2>
+            <h2>
+              {activeView === "overview" && "Security Operations Dashboard"}
+              {activeView === "repositories" && "Repository Security Inventory"}
+              {activeView === "reports" && "Security Report History"}
+              {activeView === "team" && "Team Access Management"}
+            </h2>
             <p>
-              Monitor repository intake, scan execution, and vulnerability
-              intelligence in one responsive workspace.
+              {activeView === "overview" &&
+                "Monitor repository intake, scan execution, and vulnerability intelligence in one responsive workspace."}
+              {activeView === "repositories" &&
+                "Review repository posture, clone health, and score movement from a dedicated inventory view."}
+              {activeView === "reports" &&
+                "Search historical reports, export PDFs, and review scan outcomes across repositories."}
+              {activeView === "team" &&
+                "Manage who has access to SecureFlow and adjust user roles without leaving the dashboard."}
             </p>
           </div>
           <div className="hero-actions">
@@ -790,6 +1013,8 @@ function App() {
           <div className="banner">Loading platform telemetry...</div>
         ) : null}
 
+        {activeView === "overview" ? (
+          <>
         <section className="summary-grid">
           <article className="summary-card score-card">
             <span>Security Score</span>
@@ -803,7 +1028,7 @@ function App() {
             <article className={`summary-card ${card.accent}`} key={card.key}>
               <span>{card.label}</span>
               <strong>{dashboard.metrics.severityTotals[card.key]}</strong>
-              <p>Across recent report history</p>
+              <p>{card.description}</p>
             </article>
           ))}
         </section>
@@ -1212,8 +1437,11 @@ function App() {
             )}
           </section>
         </section>
+          </>
+        ) : null}
 
-        <section className="history-grid">
+        <section className={`history-grid ${activeView === "team" ? "single-column-grid" : ""}`}>
+          {activeView === "reports" ? (
           <section className={`panel history-panel ${activeView === "reports" ? "active-panel" : ""}`}>
             <div className="panel-header">
               <div>
@@ -1368,8 +1596,11 @@ function App() {
               </button>
             </div>
           </section>
+          ) : null}
 
-          <section className={`panel history-panel ${activeView === "jobs" ? "active-panel" : ""}`}>
+          {activeView === "pipelines" ? (
+          <>
+          <section className={`panel history-panel ${activeView === "pipelines" ? "active-panel" : ""}`}>
             <div className="panel-header">
               <div>
                 <h3>Scan Job Timeline</h3>
@@ -1426,32 +1657,27 @@ function App() {
 
             {loadingJobs ? <p className="inline-loading">Loading job history...</p> : null}
 
-            <div className="job-list">
+            <div className="job-list selectable-list">
               {jobsState.data.map((job) => (
-                <div className="job-list-row bordered" key={job.id}>
-                  <div>
-                    <strong>{job.repository?.name || "Unknown repository"}</strong>
-                    <p>
-                      {job.scanType} / {job.tool} / {job.queueJobId || "No queue id"}
-                    </p>
+                <button
+                  className={`list-card-button ${selectedJobId === job.id ? "active-panel" : ""}`}
+                  key={job.id}
+                  type="button"
+                  onClick={() => setSelectedJobId(job.id)}
+                >
+                  <div className="job-list-row bordered">
+                    <div>
+                      <strong>{job.repository?.name || "Unknown repository"}</strong>
+                      <p>
+                        {job.scanType} / {job.tool} / {job.queueJobId || "No queue id"}
+                      </p>
+                    </div>
+                    <div className="job-list-side">
+                      <span className={`job-status ${job.status}`}>{job.status}</span>
+                      <span>{formatTimestamp(job.createdAt)}</span>
+                    </div>
                   </div>
-                  <div className="job-list-side">
-                    <button
-                      className="icon-button danger-button"
-                      type="button"
-                      onClick={(event) => deleteScanHistory(event, job.id)}
-                      disabled={
-                        auth.user?.role === "viewer" || deletingReportId === job.id
-                      }
-                      title="Delete scan history"
-                      aria-label="Delete scan history"
-                    >
-                      {deletingReportId === job.id ? "Deleting..." : "Delete"}
-                    </button>
-                    <span className={`job-status ${job.status}`}>{job.status}</span>
-                    <span>{formatTimestamp(job.createdAt)}</span>
-                  </div>
-                </div>
+                </button>
               ))}
             </div>
 
@@ -1486,6 +1712,327 @@ function App() {
               </button>
             </div>
           </section>
+          <section className="panel detail-panel active-panel">
+            <div className="panel-header">
+              <div>
+                <h3>Pipeline Detail</h3>
+                <p className="panel-copy">
+                  Review the selected run, repository, and stage status at a glance.
+                </p>
+              </div>
+              <span className="soft-pill">Execution View</span>
+            </div>
+
+            {selectedJob ? (
+              <div className="detail-card">
+                <span className={`job-status ${selectedJob.status}`}>{selectedJob.status}</span>
+                <h4>{selectedJob.repository?.name || "Unknown repository"}</h4>
+                <p><strong>Repository:</strong> {selectedJob.repository?.url || "Unavailable"}</p>
+                <p><strong>Scan Type:</strong> {selectedJob.scanType}</p>
+                <p><strong>Tool:</strong> {selectedJob.tool}</p>
+                <p><strong>Queue Job ID:</strong> {selectedJob.queueJobId || "Not assigned"}</p>
+                <p><strong>Triggered By:</strong> {selectedJob.triggeredBy || "system"}</p>
+                <p><strong>Created:</strong> {formatTimestamp(selectedJob.createdAt)}</p>
+                <p><strong>Started:</strong> {formatTimestamp(selectedJob.startedAt)}</p>
+                <p><strong>Completed:</strong> {formatTimestamp(selectedJob.completedAt)}</p>
+
+                {selectedJob.lastError ? (
+                  <div className="insight-note">{selectedJob.lastError}</div>
+                ) : null}
+
+                <div className="status-list compact">
+                  {buildStageStatuses(selectedJob.status).map((item) => (
+                    <div className="status-row" key={item.stage}>
+                      <div className="status-row-title">
+                        <span className={`status-dot ${item.status.toLowerCase()}`} />
+                        <span>{item.stage}</span>
+                      </div>
+                      <strong>{item.status}</strong>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  className="icon-button danger-button"
+                  type="button"
+                  onClick={(event) => deleteScanHistory(event, selectedJob.id)}
+                  disabled={
+                    auth.user?.role === "viewer" || deletingReportId === selectedJob.id
+                  }
+                >
+                  {deletingReportId === selectedJob.id ? "Deleting..." : "Delete Pipeline"}
+                </button>
+              </div>
+            ) : (
+              <div className="empty-detail">
+                <h4>No Pipeline Selected</h4>
+                <p>Select a pipeline run to inspect its execution details.</p>
+              </div>
+            )}
+          </section>
+          </>
+          ) : null}
+
+          {activeView === "repositories" ? (
+          <>
+          <section className="panel history-panel active-panel">
+            <div className="panel-header">
+              <div>
+                <h3>Repository Inventory</h3>
+                <p className="panel-copy">
+                  Browse connected repositories and review their current posture.
+                </p>
+              </div>
+              <span className="soft-pill">{repositoriesState.pagination.totalItems} repos</span>
+            </div>
+
+            <div className="filter-grid">
+              <input
+                value={repositoryFilters.search}
+                onChange={(event) =>
+                  setRepositoryFilters((current) => ({
+                    ...current,
+                    search: event.target.value,
+                    page: 1,
+                  }))
+                }
+                placeholder="Search repository"
+              />
+              <select
+                value={repositoryFilters.cloneStatus}
+                onChange={(event) =>
+                  setRepositoryFilters((current) => ({
+                    ...current,
+                    cloneStatus: event.target.value,
+                    page: 1,
+                  }))
+                }
+              >
+                <option value="">All clone states</option>
+                <option value="pending">Pending</option>
+                <option value="cloned">Cloned</option>
+                <option value="failed">Failed</option>
+              </select>
+              <button className="status-pill" type="button" onClick={() => loadRepositories()}>
+                Refresh
+              </button>
+            </div>
+
+            {loadingRepositories ? <p className="inline-loading">Loading repositories...</p> : null}
+
+            <div className="repository-list selectable-list">
+              {repositoriesState.data.map((repository) => (
+                <button
+                  className={`list-card-button ${selectedRepositoryId === repository.id ? "active-panel" : ""}`}
+                  key={repository.id}
+                  type="button"
+                  onClick={() => setSelectedRepositoryId(repository.id)}
+                >
+                  <div className="repository-item">
+                    <div className="repository-copy">
+                      <strong>{repository.name}</strong>
+                      <p className="repository-path">{formatRepositoryPath(repository.url)}</p>
+                      <p>
+                        {repository.owner || "unknown owner"} / {repository.branch || "main"}
+                      </p>
+                    </div>
+                    <span className={`job-status ${repository.cloneStatus || "pending"}`}>
+                      {repository.cloneStatus || "pending"}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel detail-panel active-panel">
+            <div className="panel-header">
+              <div>
+                <h3>Repository Profile</h3>
+                <p className="panel-copy">
+                  Review clone health, latest score, and scan context for the selected repo.
+                </p>
+              </div>
+              <span className="soft-pill">Repository View</span>
+            </div>
+
+            {selectedRepository ? (
+              <div className="detail-card">
+                <span className={`job-status ${selectedRepository.cloneStatus || "pending"}`}>
+                  {selectedRepository.cloneStatus || "pending"}
+                </span>
+                <h4>{selectedRepository.name}</h4>
+                <p><strong>URL:</strong> {selectedRepository.url}</p>
+                <p><strong>Owner:</strong> {selectedRepository.owner || "Unknown owner"}</p>
+                <p><strong>Branch:</strong> {selectedRepository.branch || "main"}</p>
+                <p><strong>Submitted:</strong> {formatTimestamp(selectedRepository.submittedAt)}</p>
+                <p><strong>Latest Job:</strong> {selectedRepository.latestScanJob?.status || "No runs yet"}</p>
+                <p>
+                  <strong>Latest Score:</strong>{" "}
+                  {selectedRepository.latestReport?.securityScore?.score ?? "No score yet"}
+                </p>
+                <p>
+                  <strong>Latest Findings:</strong>{" "}
+                  {selectedRepository.latestReport?.findingsCount ?? 0}
+                </p>
+
+                {selectedRepository.lastCloneError ? (
+                  <div className="insight-note">{selectedRepository.lastCloneError}</div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="empty-detail">
+                <h4>No Repository Selected</h4>
+                <p>Select a repository to inspect its security profile.</p>
+              </div>
+            )}
+          </section>
+          </>
+          ) : null}
+
+          {activeView === "team" ? (
+          <section className="panel history-panel active-panel">
+            <div className="panel-header">
+              <div>
+                <h3>Team / Role Management</h3>
+                <p className="panel-copy">
+                  Review members, filter by role, and update access from the sidebar.
+                </p>
+              </div>
+              <span className="soft-pill">
+                {isAdmin ? `${teamState.pagination.totalItems} members` : "Admin only"}
+              </span>
+            </div>
+
+            {!isAdmin ? (
+              <div className="empty-detail">
+                <h4>Admin Access Required</h4>
+                <p>Sign in as an administrator to manage users and roles.</p>
+              </div>
+            ) : (
+              <>
+                <div className="filter-grid">
+                  <input
+                    value={teamFilters.search}
+                    onChange={(event) =>
+                      setTeamFilters((current) => ({
+                        ...current,
+                        search: event.target.value,
+                        page: 1,
+                      }))
+                    }
+                    placeholder="Search by name or email"
+                  />
+                  <select
+                    value={teamFilters.role}
+                    onChange={(event) =>
+                      setTeamFilters((current) => ({
+                        ...current,
+                        role: event.target.value,
+                        page: 1,
+                      }))
+                    }
+                  >
+                    <option value="">All roles</option>
+                    <option value="admin">Admin</option>
+                    <option value="developer">Developer</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                  <select
+                    value={teamFilters.status}
+                    onChange={(event) =>
+                      setTeamFilters((current) => ({
+                        ...current,
+                        status: event.target.value,
+                        page: 1,
+                      }))
+                    }
+                  >
+                    <option value="">All status</option>
+                    <option value="active">Active</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </div>
+
+                {loadingTeam ? <p className="inline-loading">Loading team members...</p> : null}
+
+                <div className="team-grid">
+                  {teamState.data.map((member) => {
+                    const draft = teamDrafts[member.id] || {
+                      role: member.role,
+                      status: member.status,
+                    };
+
+                    return (
+                      <article className="detail-card" key={member.id}>
+                        <div className="insight-status-row">
+                          <div>
+                            <h4>{member.name}</h4>
+                            <p>{member.email}</p>
+                          </div>
+                          <span className={`job-status ${member.status}`}>{member.status}</span>
+                        </div>
+
+                        <p><strong>Created:</strong> {formatTimestamp(member.createdAt)}</p>
+                        <p><strong>Last login:</strong> {formatTimestamp(member.lastLoginAt)}</p>
+
+                        <div className="form-row">
+                          <label>
+                            <span>Role</span>
+                            <select
+                              value={draft.role}
+                              onChange={(event) =>
+                                setTeamDrafts((current) => ({
+                                  ...current,
+                                  [member.id]: {
+                                    ...draft,
+                                    role: event.target.value,
+                                  },
+                                }))
+                              }
+                            >
+                              <option value="admin">Admin</option>
+                              <option value="developer">Developer</option>
+                              <option value="viewer">Viewer</option>
+                            </select>
+                          </label>
+
+                          <label>
+                            <span>Status</span>
+                            <select
+                              value={draft.status}
+                              onChange={(event) =>
+                                setTeamDrafts((current) => ({
+                                  ...current,
+                                  [member.id]: {
+                                    ...draft,
+                                    status: event.target.value,
+                                  },
+                                }))
+                              }
+                            >
+                              <option value="active">Active</option>
+                              <option value="disabled">Disabled</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        <button
+                          className="action-button"
+                          type="button"
+                          onClick={() => updateTeamMember(member.id)}
+                          disabled={savingUserId === member.id}
+                        >
+                          {savingUserId === member.id ? "Saving..." : "Save Changes"}
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </section>
+          ) : null}
         </section>
       </main>
     </div>

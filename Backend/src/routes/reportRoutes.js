@@ -1,6 +1,7 @@
 const express = require("express");
 const { requireRole } = require("../middleware/authMiddleware");
 const {
+  listRepositories,
   listReports,
   getReportById,
   listScanJobs,
@@ -14,6 +15,7 @@ const {
 
 const router = express.Router();
 
+router.get("/repositories", listRepositories);
 router.get("/reports", listReports);
 router.get("/reports/:reportId", getReportById);
 router.get("/reports/:reportId/download.pdf", downloadReportPdf);

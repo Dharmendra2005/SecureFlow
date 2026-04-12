@@ -114,6 +114,52 @@ const serializeRemediationPullRequest = (item) => ({
   updatedAt: item.updatedAt,
 });
 
+const serializeRepository = ({
+  repository,
+  latestJob,
+  latestReport,
+  analytics,
+}) => ({
+  id: repository._id,
+  name: repository.name,
+  owner: repository.owner,
+  url: repository.url,
+  branch: repository.branch,
+  provider: repository.provider,
+  scanMode: repository.scanMode,
+  localPath: repository.localPath,
+  cloneStatus: repository.cloneStatus,
+  lastCloneError: repository.lastCloneError,
+  submittedAt: repository.submittedAt,
+  clonedAt: repository.clonedAt,
+  createdAt: repository.createdAt,
+  updatedAt: repository.updatedAt,
+  latestScanJob: latestJob
+    ? {
+        id: latestJob._id,
+        status: latestJob.status,
+        scanType: latestJob.scanType,
+        tool: latestJob.tool,
+        queueJobId: latestJob.queueJobId,
+        startedAt: latestJob.startedAt,
+        completedAt: latestJob.completedAt,
+        failedAt: latestJob.failedAt,
+        lastError: latestJob.lastError,
+        createdAt: latestJob.createdAt,
+      }
+    : null,
+  latestReport: latestReport
+    ? {
+        id: latestReport._id,
+        summary: latestReport.summary,
+        securityScore: latestReport.securityScore,
+        findingsCount: latestReport.findings?.length || 0,
+        createdAt: latestReport.createdAt,
+      }
+    : null,
+  analytics,
+});
+
 const listReports = async (req, res) => {
   const pagination = buildPagination(req.query);
   const severity = req.query.severity?.trim().toLowerCase() || "";
@@ -201,6 +247,83 @@ const listReports = async (req, res) => {
       severity,
       type,
       repository: req.query.repository || "",
+    },
+  });
+};
+
+const listRepositories = async (req, res) => {
+  const pagination = buildPagination(req.query);
+  const search = String(req.query.search || "").trim();
+  const cloneStatus = String(req.query.cloneStatus || "").trim().toLowerCase();
+
+  const repositoryQuery = {
+    ...(cloneStatus ? { cloneStatus } : {}),
+    ...(search
+      ? {
+          $or: [
+            { name: new RegExp(search, "i") },
+            { owner: new RegExp(search, "i") },
+            { url: new RegExp(search, "i") },
+          ],
+        }
+      : {}),
+  };
+
+  const [totalItems, repositories] = await Promise.all([
+    Repository.countDocuments(repositoryQuery),
+    Repository.find(repositoryQuery)
+      .sort({ updatedAt: -1 })
+      .skip(pagination.skip)
+      .limit(pagination.limit)
+      .lean(),
+  ]);
+
+  const repositoryIds = repositories.map((repository) => repository._id);
+
+  const [jobs, reports] = await Promise.all([
+    ScanJob.find({ repository: { $in: repositoryIds } })
+      .sort({ createdAt: -1 })
+      .lean(),
+    VulnerabilityReport.find({ repository: { $in: repositoryIds } })
+      .sort({ createdAt: -1 })
+      .lean(),
+  ]);
+
+  const jobsByRepository = jobs.reduce((accumulator, job) => {
+    const key = String(job.repository);
+    accumulator[key] = accumulator[key] || [];
+    accumulator[key].push(job);
+    return accumulator;
+  }, {});
+
+  const reportsByRepository = reports.reduce((accumulator, report) => {
+    const key = String(report.repository);
+    accumulator[key] = accumulator[key] || [];
+    accumulator[key].push(report);
+    return accumulator;
+  }, {});
+
+  return res.json({
+    data: repositories.map((repository) => {
+      const repositoryId = String(repository._id);
+      const repositoryReports = reportsByRepository[repositoryId] || [];
+
+      return serializeRepository({
+        repository,
+        latestJob: (jobsByRepository[repositoryId] || [])[0] || null,
+        latestReport: repositoryReports[0] || null,
+        analytics: buildRepositoryAnalytics({ reports: [...repositoryReports].reverse() }),
+      });
+    }),
+    pagination: {
+      page: pagination.page,
+      limit: pagination.limit,
+      totalItems,
+      totalPages: Math.ceil(totalItems / pagination.limit),
+    },
+    filters: {
+      search,
+      cloneStatus,
     },
   });
 };
@@ -613,6 +736,7 @@ const deleteScanJobById = async (req, res) => {
 };
 
 module.exports = {
+  listRepositories,
   listReports,
   getReportById,
   listScanJobs,
