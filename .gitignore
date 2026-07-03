@@ -5,4 +5,5 @@ Backend/workspace
 Backend/.env
 Frontend/.env
 .env
+Bcakend/.env.example
 .DS_Store
