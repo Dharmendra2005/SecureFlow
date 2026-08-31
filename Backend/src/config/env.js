@@ -23,7 +23,7 @@ module.exports = {
   },
   mongodb: {
     uri:
-      process.env.MONGODB_URI || "",
+      process.env.MONGODB_URI || "mongodb://127.0.0.1:27018/secureflow",
   },
   redis: {
     host: process.env.REDIS_HOST || "127.0.0.1",
